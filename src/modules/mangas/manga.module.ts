@@ -2,20 +2,17 @@ import { Module } from '@nestjs/common';
 import { SequelizeModule } from '@nestjs/sequelize';
 import { MulterModule } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { extname, join } from 'path';
+import { extname } from 'path';
 
 import { Manga } from 'src/modules/mangas/dto/mangas.model';
-
-// import { Author } from './models/author.model';
-// import { Category } from './models/category.model';
-// import { MangaCategory } from './models/manga-category.model';
-// import { Chapter } from './models/chapter.model';
+import { Genre } from 'src/modules/genres/dto/genre.model';
+import { MangaGenre } from 'src/modules/genres/dto/manga-genre.model';
 
 import { MangaController } from './manga.controller';
 import { MangaService } from './manga.service';
 import { Page } from '../pages/dto/pages.model';
 import { Chapter } from '../chapters/dto/chapters.model';
-import { ServeStaticModule } from '@nestjs/serve-static';
+import { GenreModule } from '../genres/genre.module';
 
 function coverFilename(req: any, file: any, cb: any) {
     const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
@@ -24,7 +21,8 @@ function coverFilename(req: any, file: any, cb: any) {
 
 @Module({
     imports: [
-        SequelizeModule.forFeature([Manga, Page, Chapter]),
+        SequelizeModule.forFeature([Manga, Page, Chapter, Genre, MangaGenre]),
+        GenreModule,
 
         MulterModule.register({
             storage: diskStorage({

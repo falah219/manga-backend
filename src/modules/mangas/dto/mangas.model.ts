@@ -1,15 +1,15 @@
 import {
-    BelongsTo,
     BelongsToMany,
     Column,
     DataType,
-    ForeignKey,
     HasMany,
     Model,
     Table,
     Index,
 } from 'sequelize-typescript';
 import { Chapter } from 'src/modules/chapters/dto/chapters.model';
+import { Genre } from 'src/modules/genres/dto/genre.model';
+import { MangaGenre } from 'src/modules/genres/dto/manga-genre.model';
 
 
 export enum MangaStatus {
@@ -63,19 +63,12 @@ export class Manga extends Model {
     @Column({ type: DataType.STRING, allowNull: true })
     declare author_name: string;
 
-
     @HasMany(() => Chapter, { as: 'chapters', onDelete: 'CASCADE', hooks: true })
     declare chapters?: Chapter[];
 
-    // many-to-many
-    @Column({
-        type: DataType.JSONB,
-        allowNull: false,
-        defaultValue: [],
-    })
-    declare categories: string[];
-
-    // kalau kamu juga mau akses pivot rows langsung:
+    // many-to-many: Manga <-> Genre
+    @BelongsToMany(() => Genre, () => MangaGenre)
+    declare genres?: Genre[];
 
     @Column({ type: DataType.DATE })
     declare created_at: Date;
@@ -83,3 +76,4 @@ export class Manga extends Model {
     @Column({ type: DataType.DATE })
     declare updated_at: Date;
 }
+

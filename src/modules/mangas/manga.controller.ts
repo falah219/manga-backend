@@ -1,8 +1,8 @@
-import { BadRequestException, Body, Controller, DefaultValuePipe, Get, Param, ParseIntPipe, ParseUUIDPipe, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, DefaultValuePipe, Delete, Get, Param, ParseIntPipe, ParseUUIDPipe, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request } from 'express';
 import { MangaService } from './manga.service';
-import { GetAllMangasDto } from './dto/manga.dto';
+import { CreateMangaDto, GetAllMangasDto, UpdateMangaDto } from './dto/manga.dto';
 import { Manga } from './dto/mangas.model';
 import { ChapterResponseDto } from '../chapters/dto/chapter.dto';
 import { Chapter } from '../chapters/dto/chapters.model';
@@ -81,7 +81,7 @@ export class MangaController {
         let cover_url: string | undefined;
         if (file) {
             const baseUrl = `${req.protocol}://${req.get('host')}`;
-            cover_url = `${baseUrl}/uploads/covers/${file.filename}`;
+            cover_url = `/uploads/covers/${file.filename}`;
             console.log(cover_url);
 
         }
@@ -89,12 +89,12 @@ export class MangaController {
         // multipart => body string
         const year = body.year ? Number(body.year) : undefined;
 
-        let categories: string[] = [];
-        if (body.categories) {
+        let genre_ids: string[] = [];
+        if (body.genre_ids) {
             try {
-                categories = JSON.parse(body.categories); // kirim '["action","drama"]'
+                genre_ids = JSON.parse(body.genre_ids); // kirim '["uuid1","uuid2"]'
             } catch {
-                categories = [String(body.categories)];
+                genre_ids = [String(body.genre_ids)];
             }
         }
 
@@ -106,8 +106,54 @@ export class MangaController {
             year,
             cover_url,
             author_name: body.author_name,
-            categories,
+            genre_ids,
         });
+    }
+
+    @Patch(':id')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(UserRole.ADMIN)
+    @UseInterceptors(FileInterceptor('cover'))
+    async update(
+        @Param('id', ParseUUIDPipe) id: string,
+        @UploadedFile() file: Express.Multer.File,
+        @Body() body: UpdateMangaDto,
+        @Req() req: Request,
+    ) {
+        let cover_url: string | undefined;
+        if (file) {
+            const baseUrl = `${req.protocol}://${req.get('host')}`;
+            cover_url = `/uploads/covers/${file.filename}`;
+        }
+
+        const year = body.year ? Number(body.year) : undefined;
+
+        let genre_ids: string[] | undefined;
+        if (body.genre_ids) {
+            try {
+                genre_ids = JSON.parse(body.genre_ids);
+            } catch {
+                genre_ids = [String(body.genre_ids)];
+            }
+        }
+
+        return this.mangaService.update(id, {
+            ...(body.title && { title: body.title }),
+            ...(body.slug && { slug: body.slug }),
+            ...(body.description !== undefined && { description: body.description }),
+            ...(body.status && { status: body.status }),
+            ...(year !== undefined && { year }),
+            ...(cover_url && { cover_url }),
+            ...(body.author_name !== undefined && { author_name: body.author_name }),
+            ...(genre_ids && { genre_ids }),
+        });
+    }
+
+    @Delete(':id')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles(UserRole.ADMIN)
+    async delete(@Param('id', ParseUUIDPipe) id: string) {
+        return this.mangaService.delete(id);
     }
 
 

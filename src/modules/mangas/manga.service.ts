@@ -1,18 +1,21 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/sequelize';
 import { Op, Order, Sequelize } from 'sequelize';
+import * as fs from 'fs';
+import * as path from 'path';
 import { Manga } from 'src/modules/mangas/dto/mangas.model';
 import { Chapter, ChapterStatus } from '../chapters/dto/chapters.model';
 import { GetAllMangasDto, PaginationResponse } from './dto/manga.dto';
-// import { Author } from './models/author.model';
-// import { MangaCategory } from './models/manga-category.model';
-// import { Category } from './models/category.model';
+import { Genre } from '../genres/dto/genre.model';
+import { MangaGenre } from '../genres/dto/manga-genre.model';
 
 @Injectable()
 export class MangaService {
     constructor(
         @InjectModel(Manga) private mangaModel: typeof Manga,
         @InjectModel(Chapter) private chapterModel: typeof Chapter,
+        @InjectModel(Genre) private genreModel: typeof Genre,
+        @InjectModel(MangaGenre) private mangaGenreModel: typeof MangaGenre,
     ) { }
 
     async create(body: {
@@ -23,7 +26,7 @@ export class MangaService {
         year?: number;
         cover_url?: string;
         author_name?: string;
-        categories?: string[];
+        genre_ids?: string[];
     }) {
         const exists = await this.mangaModel.findOne({ where: { slug: body.slug } });
         if (exists) throw new BadRequestException('Slug already exists');
@@ -36,10 +39,92 @@ export class MangaService {
             year: body.year,
             cover_url: body.cover_url,
             author_name: body.author_name,
-            categories: body.categories || [],
         });
 
+        // Set genre relations
+        if (body.genre_ids && body.genre_ids.length > 0) {
+            await manga.$set('genres', body.genre_ids);
+        }
+
         return this.findOneBySlug(body.slug);
+    }
+
+    async update(id: string, body: {
+        title?: string;
+        slug?: string;
+        description?: string;
+        status?: any;
+        year?: number;
+        cover_url?: string;
+        author_name?: string;
+        genre_ids?: string[];
+    }) {
+        const manga = await this.mangaModel.findByPk(id);
+        if (!manga || manga.is_deleted) {
+            throw new NotFoundException(`Manga with ID ${id} not found`);
+        }
+
+        // Check slug uniqueness if slug is being changed
+        if (body.slug && body.slug !== manga.slug) {
+            const slugExists = await this.mangaModel.findOne({ where: { slug: body.slug } });
+            if (slugExists) throw new BadRequestException('Slug already exists');
+        }
+
+        // Hapus file cover lama jika ada cover baru
+        if (body.cover_url && manga.cover_url) {
+            try {
+                const oldFilename = manga.cover_url.split('/uploads/covers/')[1];
+                if (oldFilename) {
+                    const oldPath = path.join('./uploads/covers', oldFilename);
+                    fs.unlinkSync(oldPath);
+                }
+            } catch (err) {
+                // Ignore jika file tidak ditemukan
+                console.warn('Old cover file not found, skipping delete:', err.message);
+            }
+        }
+
+        await manga.update({
+            ...(body.title !== undefined && { title: body.title }),
+            ...(body.slug !== undefined && { slug: body.slug }),
+            ...(body.description !== undefined && { description: body.description }),
+            ...(body.status !== undefined && { status: body.status }),
+            ...(body.year !== undefined && { year: body.year }),
+            ...(body.cover_url !== undefined && { cover_url: body.cover_url }),
+            ...(body.author_name !== undefined && { author_name: body.author_name }),
+        });
+
+        // Update genre relations if provided
+        if (body.genre_ids !== undefined) {
+            await manga.$set('genres', body.genre_ids);
+        }
+
+        // Reload with genres
+        const updated = await this.mangaModel.findByPk(id, {
+            include: [{ model: Genre, attributes: ['id', 'name', 'slug'] }],
+        });
+
+        return {
+            success: 200,
+            message: 'Manga updated successfully',
+            data: updated,
+        };
+    }
+
+
+    async delete(id: string) {
+        const manga = await this.mangaModel.findByPk(id);
+        if (!manga) {
+            throw new NotFoundException(`Manga with ID ${id} not found`);
+        }
+
+        manga.is_deleted = true;
+        await manga.save();
+
+        return {
+            success: 200,
+            message: 'Manga deleted successfully',
+        };
     }
 
     async getAllMangas(query: GetAllMangasDto): Promise<PaginationResponse<Manga>> {
@@ -73,11 +158,19 @@ export class MangaService {
             whereClause.status = status;
         }
 
-        // Category filter (JSONB contains)
+        // Category/genre filter — find manga IDs that have this genre slug
         if (category) {
-            whereClause.categories = {
-                [Op.contains]: [category],
-            };
+            const mangaIds = await this.mangaGenreModel.findAll({
+                attributes: ['manga_id'],
+                include: [{
+                    model: Genre,
+                    where: { slug: category },
+                    attributes: [],
+                }],
+                raw: true,
+            });
+            const ids = mangaIds.map((mg: any) => mg.manga_id);
+            whereClause.id = { [Op.in]: ids.length > 0 ? ids : ['00000000-0000-0000-0000-000000000000'] };
         }
 
         // Build order clause with proper typing
@@ -90,7 +183,7 @@ export class MangaService {
 
         const totalPages = Math.ceil(totalItems / limit);
 
-        // Get paginated data
+        // Get paginated data with genres included
         const mangas = await this.mangaModel.findAll({
             where: whereClause,
             order: orderClause,
@@ -99,25 +192,23 @@ export class MangaService {
             attributes: {
                 exclude: ['is_deleted'],
             },
+            include: [{ model: Genre, attributes: ['id', 'name', 'slug'] }],
         });
 
-        // console.log(mangas);
-
         const transformedMangas = mangas.map(manga => {
-            const data = manga.toJSON(); // Convert Sequelize instance ke plain object
+            const data = manga.toJSON();
 
             return {
                 id: data.id,
                 title: data.title,
                 slug: data.slug,
                 description: data.description,
-                status: data.status, // COMPLETED -> completed
+                status: data.status,
                 year: data.year,
-                cover_url: data.cover_url,           // snake_case -> camelCase
-                view_count: data.view_count,         // snake_case -> camelCase
-                is_deleted: data.is_deleted,
-                author_name: data.author_name,           // Simplify field name
-                categories: data.categories,
+                cover_url: data.cover_url,
+                view_count: data.view_count,
+                author_name: data.author_name,
+                genres: data.genres || [],
                 created_at: data.created_at,
                 updated_at: data.updated_at,
             };
@@ -127,14 +218,14 @@ export class MangaService {
         return {
             success: 200,
             message: 'Manga list retrieved successfully',
-            data: transformedMangas,              // ✅ Flat, bukan nested
+            data: transformedMangas,
             pagination: {
-                page: page,                          // ✅ Rename dari currentPage
-                limit: limit,                        // ✅ Rename dari itemsPerPage
-                total: totalItems,                   // ✅ Rename dari totalItems
+                page: page,
+                limit: limit,
+                total: totalItems,
                 totalPages: totalPages,
-                hasNext: page < totalPages,          // ✅ Rename dari hasNextPage
-                hasPrev: page > 1,                   // ✅ Rename dari hasPrevPage
+                hasNext: page < totalPages,
+                hasPrev: page > 1,
             }
         };
     }
@@ -145,6 +236,7 @@ export class MangaService {
                 id,
                 is_deleted: false
             },
+            include: [{ model: Genre, attributes: ['id', 'name', 'slug'] }],
         });
 
         if (!manga) {
@@ -213,6 +305,7 @@ export class MangaService {
             where: { slug, is_deleted: false },
             include: [
                 { model: Chapter, as: 'chapters', required: false, where: { is_deleted: false } },
+                { model: Genre, attributes: ['id', 'name', 'slug'] },
             ],
             order: [[{ model: Chapter, as: 'chapters' }, 'number', 'DESC']],
         });
@@ -222,25 +315,43 @@ export class MangaService {
     }
 
     async findSimilarByGenre(id: string, limit: number) {
-        const manga = await this.mangaModel.findByPk(id);
-        //console.log(manga);
+        const manga = await this.mangaModel.findByPk(id, {
+            include: [{ model: Genre, attributes: ['id'] }],
+        });
 
         if (!manga || manga.is_deleted) {
             throw new NotFoundException(`Manga with ID ${id} not found`);
         }
 
+        const genreIds = (manga.genres || []).map(g => g.id);
+
+        if (genreIds.length === 0) {
+            return [];
+        }
+
+        // Find manga IDs that share at least one genre
+        const mangaGenreRows = await this.mangaGenreModel.findAll({
+            attributes: ['manga_id'],
+            where: {
+                genre_id: { [Op.in]: genreIds },
+                manga_id: { [Op.ne]: id },
+            },
+            group: ['manga_id'],
+            raw: true,
+        });
+
+        const similarIds = mangaGenreRows.map((row: any) => row.manga_id);
+
+        if (similarIds.length === 0) {
+            return [];
+        }
+
         const similarManga = await this.mangaModel.findAll({
             where: {
-                [Op.or]: manga.categories.map(category => ({
-                    categories: {
-                        [Op.contains]: category
-                    }
-                })),
-                id: {
-                    [Op.ne]: id
-                },
+                id: { [Op.in]: similarIds },
                 is_deleted: false,
             },
+            include: [{ model: Genre, attributes: ['id', 'name', 'slug'] }],
             limit,
             order: Sequelize.literal('RANDOM()'),
         });
@@ -260,3 +371,4 @@ export class MangaService {
     }
 
 }
+

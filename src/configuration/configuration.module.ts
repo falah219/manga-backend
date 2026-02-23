@@ -4,6 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MangaModule } from 'src/modules/mangas/manga.module';
 import { PagesModule } from 'src/modules/pages/pages.module';
 import { AuthModule } from 'src/modules/auth/auth.module';
+import { GenreModule } from 'src/modules/genres/genre.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { AuthModule } from 'src/modules/auth/auth.module';
     MangaModule,
     PagesModule,
     AuthModule,
+    GenreModule,
   ],
   exports: [SequelizeModule, ConfigModule],
 })
