@@ -72,7 +72,7 @@ export class MangaController {
     @UseInterceptors(FileInterceptor('cover')) // ✅ pakai config dari MangaModule
     async create(
         @UploadedFile() file: Express.Multer.File,
-        @Body() body: any,
+        @Body() body: CreateMangaDto,
         @Req() req: Request,
     ) {
         // kalau cover wajib:
@@ -90,11 +90,15 @@ export class MangaController {
         const year = body.year ? Number(body.year) : undefined;
 
         let genre_ids: string[] = [];
-        if (body.genre_ids) {
-            try {
-                genre_ids = JSON.parse(body.genre_ids); // kirim '["uuid1","uuid2"]'
-            } catch {
-                genre_ids = [String(body.genre_ids)];
+        if (body.genres) {
+            if (Array.isArray(body.genres)) {
+                genre_ids = body.genres; // multipart: genres[] = uuid1, genres[] = uuid2
+            } else {
+                try {
+                    genre_ids = JSON.parse(body.genres); // JSON string: '["uuid1","uuid2"]'
+                } catch {
+                    genre_ids = [String(body.genres)]; // single value
+                }
             }
         }
 
@@ -129,11 +133,15 @@ export class MangaController {
         const year = body.year ? Number(body.year) : undefined;
 
         let genre_ids: string[] | undefined;
-        if (body.genre_ids) {
-            try {
-                genre_ids = JSON.parse(body.genre_ids);
-            } catch {
-                genre_ids = [String(body.genre_ids)];
+        if (body.genres) {
+            if (Array.isArray(body.genres)) {
+                genre_ids = body.genres;
+            } else {
+                try {
+                    genre_ids = JSON.parse(body.genres);
+                } catch {
+                    genre_ids = [String(body.genres)];
+                }
             }
         }
 

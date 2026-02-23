@@ -31,7 +31,7 @@ export class CreateMangaDto {
   author_name?: string;
 
   @IsOptional()
-  genre_ids?: string; // JSON string dari frontend (multipart), di-parse di controller
+  genres?: string | string[]; // multipart: genres[] = uuid1, genres[] = uuid2
 }
 
 // ─── UPDATE MANGA DTO ───────────────────────────────────
@@ -62,7 +62,7 @@ export class UpdateMangaDto {
   author_name?: string;
 
   @IsOptional()
-  genre_ids?: string; // JSON string dari frontend (multipart), di-parse di controller
+  genres?: string | string[]; // multipart: genres[] = uuid1, genres[] = uuid2
 }
 
 export class GetAllMangasDto {
